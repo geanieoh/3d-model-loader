@@ -1,3 +1,3 @@
 # 3D Model Loader
 
-currently doesn't support normals as I have no need for normals in my personal projects
+program parses .obj files creating VBO's and EBO's to render models in opengl 

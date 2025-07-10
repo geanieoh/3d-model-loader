@@ -1,2 +1,3 @@
-# 3d-model-loader
-parses .obj files
+# 3D Model Loader
+
+currently doesn't support normals as I have no need for normals in my personal projects

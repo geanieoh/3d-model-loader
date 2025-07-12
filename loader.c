@@ -5,7 +5,7 @@
 void insert_unique_face(Obj* obj, int* uniqueEntries, float* tmpVertBuffer, float* vertArray, float* uvArray, int* vo, int* largest, int a, int b){
     _bool dupeVertFound = _false, nextAvailableIndexFound = _false, vertSeen = _false;
     int nextAvailableIndex;
-    for(int i = 0; i < obj->iCount*2; i+=2){
+    for(int i = 0; i < obj->iCount*UV_SIZE; i+=UV_SIZE){
         if(uniqueEntries[i] == 0 && uniqueEntries[i + 1] == 0 && !nextAvailableIndexFound){
             nextAvailableIndex = i;
             nextAvailableIndexFound = _true;

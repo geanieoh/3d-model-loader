@@ -15,7 +15,7 @@ typedef struct{
     Node* buckets[HASHTABLE_SIZE];
 } Hashtable;
 
-unsigned int hashtable_hash(int a, int b){
+unsigned int data_hash(int a, int b){
     unsigned int result = (a*393241) ^ (b*786433);
     return result%HASHTABLE_SIZE;
 }
@@ -48,7 +48,7 @@ void hashtable_free(Hashtable* table) {
 void insert_unique_face(Obj* obj, Hashtable* table, float* tmpVertBuffer, float* vertArray, float* uvArray, int* vo, int* largest, int a, int b){
     _bool dupeVertFound = _false, vertSeen = _false;
 
-    unsigned int hash = hashtable_hash(a, b);
+    unsigned int hash = data_hash(a, b);
     Node* tmp = table->buckets[hash];
     if(tmp != NULL){
         while(tmp){
@@ -75,7 +75,6 @@ void insert_unique_face(Obj* obj, Hashtable* table, float* tmpVertBuffer, float*
             tmpVertBuffer[(a - 1)*STRIDE + 2] = vertArray[(a - 1)*VERT_SIZE + 2];
             tmpVertBuffer[(a - 1)*STRIDE + 3] = uvArray[(b - 1)*UV_SIZE];
             tmpVertBuffer[(a - 1)*STRIDE + 4] = uvArray[(b - 1)*UV_SIZE + 1];
-            printf("%d: %d\t%d\t\n", b, (b - 1)*UV_SIZE + 1, MAX_VERTICES*UV_SIZE);
         }
         else{
             *vo = *largest/STRIDE;
@@ -85,7 +84,6 @@ void insert_unique_face(Obj* obj, Hashtable* table, float* tmpVertBuffer, float*
             tmpVertBuffer[*largest + 3] = uvArray[(b - 1)*UV_SIZE];
             tmpVertBuffer[*largest + 4] = uvArray[(b - 1)*UV_SIZE + 1];
             *largest += STRIDE;
-            //printf("%d\t%d\t\n", (b - 1)*UV_SIZE + 1, MAX_VERTICES*UV_SIZE);
         }
         obj->vCount += STRIDE;
     }

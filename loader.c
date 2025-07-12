@@ -2,31 +2,80 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void insert_unique_face(Obj* obj, int* uniqueEntries, float* tmpVertBuffer, float* vertArray, float* uvArray, int* vo, int* largest, int a, int b){
-    _bool dupeVertFound = _false, nextAvailableIndexFound = _false, vertSeen = _false;
-    int nextAvailableIndex;
-    for(int i = 0; i < obj->iCount*UV_SIZE; i+=UV_SIZE){
-        if(uniqueEntries[i] == 0 && uniqueEntries[i + 1] == 0 && !nextAvailableIndexFound){
-            nextAvailableIndex = i;
-            nextAvailableIndexFound = _true;
+#define HASHTABLE_SIZE 10000
+
+typedef struct Node Node;
+typedef struct Node{
+    int vertIndex;
+    int uvIndex;
+    Node* next;
+} Node;
+
+typedef struct{
+    Node* buckets[HASHTABLE_SIZE];
+} Hashtable;
+
+unsigned int hashtable_hash(int a, int b){
+    unsigned int result = (a*393241) ^ (b*786433);
+    return result%HASHTABLE_SIZE;
+}
+
+void hashtable_add_node(Hashtable* table, Node* node, unsigned int hash){
+    if(table->buckets[hash] == NULL){
+        table->buckets[hash] = node;
+        return;
+    }
+
+    Node* tmp = table->buckets[hash];
+    while(tmp->next){
+        tmp = tmp->next;
+    }
+
+    tmp->next = node;
+}
+
+void hashtable_free(Hashtable* table) {
+    for (int i = 0; i < HASHTABLE_SIZE; ++i) {
+        Node* node = table->buckets[i];
+        while (node) {
+            Node* next = node->next;
+            free(node);
+            node = next;
         }
-        if(uniqueEntries[i] == a){
-            vertSeen = 1;
-            if(uniqueEntries[i + 1] == b){
-                dupeVertFound = _true;
-                break;
+    }
+}
+
+void insert_unique_face(Obj* obj, Hashtable* table, float* tmpVertBuffer, float* vertArray, float* uvArray, int* vo, int* largest, int a, int b){
+    _bool dupeVertFound = _false, vertSeen = _false;
+
+    unsigned int hash = hashtable_hash(a, b);
+    Node* tmp = table->buckets[hash];
+    if(tmp != NULL){
+        while(tmp){
+            if(tmp->vertIndex == a){
+                vertSeen = _true;
+                if(tmp->uvIndex == b){
+                    dupeVertFound = _true;
+                    break;
+                }
             }
+            tmp = tmp->next;
         }
     }
 
     if(!dupeVertFound){
-        uniqueEntries[nextAvailableIndex] = a; uniqueEntries[nextAvailableIndex + 1] = b;
+        Node* newNode = malloc(sizeof(Node));
+        newNode->vertIndex = a;
+        newNode->uvIndex = b;
+        newNode->next = NULL;
+        hashtable_add_node(table, newNode, hash);
         if(!vertSeen){
             tmpVertBuffer[(a - 1)*STRIDE] = vertArray[(a - 1)*VERT_SIZE];
             tmpVertBuffer[(a - 1)*STRIDE + 1] = vertArray[(a - 1)*VERT_SIZE + 1];
             tmpVertBuffer[(a - 1)*STRIDE + 2] = vertArray[(a - 1)*VERT_SIZE + 2];
             tmpVertBuffer[(a - 1)*STRIDE + 3] = uvArray[(b - 1)*UV_SIZE];
             tmpVertBuffer[(a - 1)*STRIDE + 4] = uvArray[(b - 1)*UV_SIZE + 1];
+            printf("%d: %d\t%d\t\n", b, (b - 1)*UV_SIZE + 1, MAX_VERTICES*UV_SIZE);
         }
         else{
             *vo = *largest/STRIDE;
@@ -36,19 +85,20 @@ void insert_unique_face(Obj* obj, int* uniqueEntries, float* tmpVertBuffer, floa
             tmpVertBuffer[*largest + 3] = uvArray[(b - 1)*UV_SIZE];
             tmpVertBuffer[*largest + 4] = uvArray[(b - 1)*UV_SIZE + 1];
             *largest += STRIDE;
+            //printf("%d\t%d\t\n", (b - 1)*UV_SIZE + 1, MAX_VERTICES*UV_SIZE);
         }
         obj->vCount += STRIDE;
     }
 }
 
 _bool obj_load(Obj* model, const char* path, _bool hasUVs){
-    float tmpVertArray[MAX_VERTICES];
-    float tmpUVArray[MAX_VERTICES];
-    float* tmpVBO = malloc(sizeof(float)*MAX_VERTICES);
+    float* tmpVertArray = malloc(sizeof(float)*MAX_VERTICES*VERT_SIZE);
+    float* tmpUVArray = malloc(sizeof(float)*MAX_VERTICES*UV_SIZE);
+    float* tmpVBO = malloc(sizeof(float)*MAX_VERTICES*STRIDE);
     float x, y, z;
 
     int vIndex = 0, uvIndex = 0, largest = 0;
-    int a, b, c, d, e, f, index = 0;
+    int index = 0;
     
     char buff[MAX_LINE];
 
@@ -56,6 +106,13 @@ _bool obj_load(Obj* model, const char* path, _bool hasUVs){
     if (!file) {
         printf("error opening file: %s\n", path);
         return _false;
+    }
+
+    Hashtable table;
+    if(hasUVs){
+        for(int i = 0; i < HASHTABLE_SIZE; i++){
+            table.buckets[i] = NULL;
+        }
     }
 
     model->iCount = 0;
@@ -78,6 +135,7 @@ _bool obj_load(Obj* model, const char* path, _bool hasUVs){
         }
         else if(buff[0] == 'f'){
             if(hasUVs){
+                int a, b, c, d, e, f;
                 sscanf(buff, "f %d/%d %d/%d %d/%d", &a, &b, &c, &d, &e, &f);
                 if(a > largest) largest = a;
                 if(c > largest) largest = c;
@@ -91,21 +149,20 @@ _bool obj_load(Obj* model, const char* path, _bool hasUVs){
 
     model->iCount *= VERT_SIZE;
     model->indices = malloc(sizeof(int)*model->iCount);
-    int* uniqueEntries;
-    if(hasUVs) uniqueEntries = calloc(model->iCount*UV_SIZE, sizeof(int));
 
     model->vCount = 0;
     if(hasUVs) largest *= STRIDE;
     while(fgets(buff, MAX_LINE, file) != NULL){ //setting up vertex buffer
         if(buff[0] == 'f'){
+            int a, b, c, d, e, f;
             if(hasUVs) sscanf(buff, "f %d/%d %d/%d %d/%d", &a, &b, &c, &d, &e, &f);
             else sscanf(buff, "f %d %d %d", &a, &c, &e);
             int vo1 = a - 1, vo2 = c - 1, vo3 = e - 1;
 
             if(hasUVs){
-                insert_unique_face(model, uniqueEntries, tmpVBO, tmpVertArray, tmpUVArray, &vo1, &largest, a, b);
-                insert_unique_face(model, uniqueEntries, tmpVBO, tmpVertArray, tmpUVArray, &vo2, &largest, c, d);
-                insert_unique_face(model, uniqueEntries, tmpVBO, tmpVertArray, tmpUVArray, &vo3, &largest, e, f);
+                insert_unique_face(model, &table, tmpVBO, tmpVertArray, tmpUVArray, &vo1, &largest, a, b);
+                insert_unique_face(model, &table, tmpVBO, tmpVertArray, tmpUVArray, &vo2, &largest, c, d);
+                insert_unique_face(model, &table, tmpVBO, tmpVertArray, tmpUVArray, &vo3, &largest, e, f);
             }
             else{
                 model->vCount += VERT_SIZE;
@@ -129,9 +186,11 @@ _bool obj_load(Obj* model, const char* path, _bool hasUVs){
             model->vertices[i] = tmpVertArray[i];
         }
     }
-    
+
+    free(tmpVertArray);
+    free(tmpUVArray);
     free(tmpVBO);
-    if(hasUVs) free(uniqueEntries);
+    if(hasUVs) hashtable_free(&table);
 
     fclose(file);
 
